@@ -1,5 +1,6 @@
 // Copyright (c) 2017-2021 Linaro LTD
 // Copyright (c) 2018-2019 JUUL Labs
+// Copyright (c) 2023 Arm Limited
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -89,7 +90,7 @@ impl Default for FlashContext {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CSimContext {
     pub flash_counter: libc::c_int,
     pub jumped: libc::c_int,
@@ -98,7 +99,19 @@ pub struct CSimContext {
     // NOTE: Always leave boot_jmpbuf declaration at the end; this should
     // store a "jmp_buf" which is arch specific and not defined by libc crate.
     // The size below is enough to store data on a x86_64 machine.
-    pub boot_jmpbuf: [u64; 16],
+    pub boot_jmpbuf: [u64; 48],
+}
+
+impl Default for CSimContext {
+    fn default() -> Self {
+        CSimContext {
+            flash_counter: 0,
+            jumped: 0,
+            c_asserts: 0,
+            c_catch_asserts: 0,
+            boot_jmpbuf: [0; 48],
+        }
+    }
 }
 
 pub struct CSimContextPtr {
@@ -131,10 +144,32 @@ pub struct BootsimRamInfo {
     pub base: usize,
 }
 
+/// This struct stores the non-volatile security counter per image. It will be stored per test thread,
+/// and the C code will set / get the values here.
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct NvCounterStorage {
+    pub storage: Vec<u32>,
+}
+
+impl NvCounterStorage {
+    pub fn new() -> Self {
+        let count = if cfg!(feature = "multiimage") {
+            2
+        } else {
+            1
+        };
+        Self {
+            storage: vec![0; count]
+        }
+    }
+}
+
 thread_local! {
     pub static THREAD_CTX: RefCell<FlashContext> = RefCell::new(FlashContext::new());
     pub static SIM_CTX: RefCell<CSimContextPtr> = RefCell::new(CSimContextPtr::new());
     pub static RAM_CTX: RefCell<BootsimRamInfo> = RefCell::new(BootsimRamInfo::default());
+    pub static NV_COUNTER_CTX: RefCell<NvCounterStorage> = RefCell::new(NvCounterStorage::new());
 }
 
 /// Set the flash device to be used by the simulation.  The pointer is unsafely stashed away.
@@ -166,42 +201,42 @@ pub fn clear_flash(dev_id: u8) {
 // This isn't meant to call directly, but by a wrapper.
 
 #[no_mangle]
-pub extern fn sim_get_flash_areas() -> *const CAreaDesc {
+pub extern "C" fn sim_get_flash_areas() -> *const CAreaDesc {
     THREAD_CTX.with(|ctx| {
         ctx.borrow().flash_areas.ptr
     })
 }
 
 #[no_mangle]
-pub extern fn sim_set_flash_areas(areas: *const CAreaDesc) {
+pub extern "C" fn sim_set_flash_areas(areas: *const CAreaDesc) {
     THREAD_CTX.with(|ctx| {
         ctx.borrow_mut().flash_areas.ptr = areas;
     });
 }
 
 #[no_mangle]
-pub extern fn sim_reset_flash_areas() {
+pub extern "C" fn sim_reset_flash_areas() {
     THREAD_CTX.with(|ctx| {
         ctx.borrow_mut().flash_areas.ptr = ptr::null();
     });
 }
 
 #[no_mangle]
-pub extern fn sim_get_context() -> *const CSimContext {
+pub extern "C" fn sim_get_context() -> *const CSimContext {
     SIM_CTX.with(|ctx| {
         ctx.borrow().ptr
     })
 }
 
 #[no_mangle]
-pub extern fn sim_set_context(ptr: *const CSimContext) {
+pub extern "C" fn sim_set_context(ptr: *const CSimContext) {
     SIM_CTX.with(|ctx| {
         ctx.borrow_mut().ptr = ptr;
     });
 }
 
 #[no_mangle]
-pub extern fn sim_reset_context() {
+pub extern "C" fn sim_reset_context() {
     SIM_CTX.with(|ctx| {
         ctx.borrow_mut().ptr = ptr::null();
     });
@@ -234,7 +269,7 @@ pub fn clear_ram_info() {
 }
 
 #[no_mangle]
-pub extern fn sim_flash_erase(dev_id: u8, offset: u32, size: u32) -> libc::c_int {
+pub extern "C" fn sim_flash_erase(dev_id: u8, offset: u32, size: u32) -> libc::c_int {
     let mut rc: libc::c_int = -19;
     THREAD_CTX.with(|ctx| {
         if let Some(flash) = ctx.borrow().flash_map.get(&dev_id) {
@@ -246,7 +281,7 @@ pub extern fn sim_flash_erase(dev_id: u8, offset: u32, size: u32) -> libc::c_int
 }
 
 #[no_mangle]
-pub extern fn sim_flash_read(dev_id: u8, offset: u32, dest: *mut u8, size: u32) -> libc::c_int {
+pub extern "C" fn sim_flash_read(dev_id: u8, offset: u32, dest: *mut u8, size: u32) -> libc::c_int {
     let mut rc: libc::c_int = -19;
     THREAD_CTX.with(|ctx| {
         if let Some(flash) = ctx.borrow().flash_map.get(&dev_id) {
@@ -259,7 +294,7 @@ pub extern fn sim_flash_read(dev_id: u8, offset: u32, dest: *mut u8, size: u32) 
 }
 
 #[no_mangle]
-pub extern fn sim_flash_write(dev_id: u8, offset: u32, src: *const u8, size: u32) -> libc::c_int {
+pub extern "C" fn sim_flash_write(dev_id: u8, offset: u32, src: *const u8, size: u32) -> libc::c_int {
     let mut rc: libc::c_int = -19;
     THREAD_CTX.with(|ctx| {
         if let Some(flash) = ctx.borrow().flash_map.get(&dev_id) {
@@ -272,14 +307,14 @@ pub extern fn sim_flash_write(dev_id: u8, offset: u32, src: *const u8, size: u32
 }
 
 #[no_mangle]
-pub extern fn sim_flash_align(id: u8) -> u32 {
+pub extern "C" fn sim_flash_align(id: u8) -> u32 {
     THREAD_CTX.with(|ctx| {
         ctx.borrow().flash_params.get(&id).unwrap().align
     })
 }
 
 #[no_mangle]
-pub extern fn sim_flash_erased_val(id: u8) -> u8 {
+pub extern "C" fn sim_flash_erased_val(id: u8) -> u8 {
     THREAD_CTX.with(|ctx| {
         ctx.borrow().flash_params.get(&id).unwrap().erased_val
     })
@@ -302,7 +337,7 @@ fn map_err(err: Result<()>) -> libc::c_int {
 /// or
 ///     RUST_LOG=bootsim=info cargo run --release runall
 #[no_mangle]
-pub extern fn sim_log_enabled(level: libc::c_int) -> libc::c_int {
+pub extern "C" fn sim_log_enabled(level: libc::c_int) -> libc::c_int {
     let res = match level {
         1 => log_enabled!(Level::Error),
         2 => log_enabled!(Level::Warn),
@@ -316,4 +351,40 @@ pub extern fn sim_log_enabled(level: libc::c_int) -> libc::c_int {
     } else {
         0
     }
+}
+
+#[no_mangle]
+pub extern "C" fn sim_set_nv_counter_for_image(image_index: u32, security_counter_value: u32) -> libc::c_int {
+    let mut rc = 0;
+    NV_COUNTER_CTX.with(|ctx| {
+        let mut counter_storage = ctx.borrow_mut();
+        if image_index as usize >= counter_storage.storage.len() {
+            rc = -1;
+            return;
+        }
+        if counter_storage.storage[image_index as usize] > security_counter_value {
+            rc = -2;
+            warn!("Failed to set security counter value ({}) for image index {}", security_counter_value, image_index);
+            return;
+        }
+
+        counter_storage.storage[image_index as usize] = security_counter_value;
+    });
+
+    return rc;
+}
+
+#[no_mangle]
+pub extern "C" fn sim_get_nv_counter_for_image(image_index: u32, security_counter_value: *mut u32) -> libc::c_int {
+    let mut rc = 0;
+    NV_COUNTER_CTX.with(|ctx| {
+        let counter_storage = ctx.borrow();
+        if image_index as usize >= counter_storage.storage.len() {
+            rc = -1;
+            return;
+        }
+        unsafe { *security_counter_value = counter_storage.storage[image_index as usize] };
+
+    });
+    return rc;
 }

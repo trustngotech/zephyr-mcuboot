@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Copyright (c) 2018-2019 JUUL Labs
- * Copyright (c) 2019-2021 Arm Limited
+ * Copyright (c) 2019-2023 Arm Limited
  */
 
 #include "mcuboot_config/mcuboot_config.h"
@@ -13,13 +13,8 @@
 #include <string.h>
 
 #if defined(MCUBOOT_ENCRYPT_RSA)
-#include "mbedtls/rsa.h"
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
-#include "rsa_alt_helpers.h"
-#else
-#include "mbedtls/rsa_internal.h"
-#endif
-#include "mbedtls/asn1.h"
+#define BOOTUTIL_CRYPTO_RSA_CRYPT_ENABLED
+#include "bootutil/crypto/rsa.h"
 #endif
 
 #if defined(MCUBOOT_ENCRYPT_KW)
@@ -35,7 +30,7 @@
 #endif
 
 #if defined(MCUBOOT_ENCRYPT_EC256) || defined(MCUBOOT_ENCRYPT_X25519)
-#include "bootutil/crypto/sha256.h"
+#include "bootutil/crypto/sha.h"
 #include "bootutil/crypto/hmac_sha256.h"
 #include "mbedtls/oid.h"
 #include "mbedtls/asn1.h"
@@ -93,74 +88,6 @@ done:
 }
 #endif /* MCUBOOT_ENCRYPT_KW */
 
-#if defined(MCUBOOT_ENCRYPT_RSA)
-static int
-parse_rsa_enckey(mbedtls_rsa_context *ctx, uint8_t **p, uint8_t *end)
-{
-    size_t len;
-
-    if (mbedtls_asn1_get_tag(p, end, &len,
-                MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE) != 0) {
-        return -1;
-    }
-
-    if (*p + len != end) {
-        return -2;
-    }
-
-    /* Non-optional fields. */
-    if ( /* version */
-        mbedtls_asn1_get_int(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(ver)) != 0 ||
-         /* public modulus */
-        mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(N)) != 0 ||
-         /* public exponent */
-        mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(E)) != 0 ||
-         /* private exponent */
-        mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(D)) != 0 ||
-         /* primes */
-        mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(P)) != 0 ||
-        mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(Q)) != 0) {
-
-        return -3;
-    }
-
-#if !defined(MBEDTLS_RSA_NO_CRT)
-    /*
-     * DP/DQ/QP are only used inside mbedTLS if it was built with the
-     * Chinese Remainder Theorem enabled (default). In case it is disabled
-     * we parse, or if not available, we calculate those values.
-     */
-    if (*p < end) {
-        if ( /* d mod (p-1) and d mod (q-1) */
-            mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(DP)) != 0 ||
-            mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(DQ)) != 0 ||
-             /* q ^ (-1) mod p */
-            mbedtls_asn1_get_mpi(p, end, &ctx->MBEDTLS_CONTEXT_MEMBER(QP)) != 0) {
-
-            return -4;
-        }
-    } else {
-        if (mbedtls_rsa_deduce_crt(&ctx->MBEDTLS_CONTEXT_MEMBER(P),
-                                   &ctx->MBEDTLS_CONTEXT_MEMBER(Q),
-                                   &ctx->MBEDTLS_CONTEXT_MEMBER(D),
-                                   &ctx->MBEDTLS_CONTEXT_MEMBER(DP),
-                                   &ctx->MBEDTLS_CONTEXT_MEMBER(DQ),
-                                   &ctx->MBEDTLS_CONTEXT_MEMBER(QP)) != 0) {
-            return -5;
-        }
-    }
-#endif
-
-    ctx->MBEDTLS_CONTEXT_MEMBER(len) = mbedtls_mpi_size(&ctx->MBEDTLS_CONTEXT_MEMBER(N));
-
-    if (mbedtls_rsa_check_privkey(ctx) != 0) {
-        return -6;
-    }
-
-    return 0;
-}
-#endif
-
 #if defined(MCUBOOT_ENCRYPT_EC256)
 static const uint8_t ec_pubkey_oid[] = MBEDTLS_OID_EC_ALG_UNRESTRICTED;
 static const uint8_t ec_secp256r1_oid[] = MBEDTLS_OID_EC_GRP_SECP256R1;
@@ -199,12 +126,12 @@ parse_ec256_enckey(uint8_t **p, uint8_t *end, uint8_t *private_key)
         return -5;
     }
 
-    if (alg.MBEDTLS_CONTEXT_MEMBER(len) != sizeof(ec_pubkey_oid) - 1 ||
-        memcmp(alg.MBEDTLS_CONTEXT_MEMBER(p), ec_pubkey_oid, sizeof(ec_pubkey_oid) - 1)) {
+    if (alg.ASN1_CONTEXT_MEMBER(len) != sizeof(ec_pubkey_oid) - 1 ||
+        memcmp(alg.ASN1_CONTEXT_MEMBER(p), ec_pubkey_oid, sizeof(ec_pubkey_oid) - 1)) {
         return -6;
     }
-    if (param.MBEDTLS_CONTEXT_MEMBER(len) != sizeof(ec_secp256r1_oid) - 1 ||
-        memcmp(param.MBEDTLS_CONTEXT_MEMBER(p), ec_secp256r1_oid, sizeof(ec_secp256r1_oid) - 1)) {
+    if (param.ASN1_CONTEXT_MEMBER(len) != sizeof(ec_secp256r1_oid) - 1 ||
+        memcmp(param.ASN1_CONTEXT_MEMBER(p), ec_secp256r1_oid, sizeof(ec_secp256r1_oid) - 1)) {
         return -7;
     }
 
@@ -276,8 +203,8 @@ parse_x25519_enckey(uint8_t **p, uint8_t *end, uint8_t *private_key)
         return -4;
     }
 
-    if (alg.MBEDTLS_CONTEXT_MEMBER(len) != sizeof(ec_pubkey_oid) - 1 ||
-        memcmp(alg.MBEDTLS_CONTEXT_MEMBER(p), ec_pubkey_oid, sizeof(ec_pubkey_oid) - 1)) {
+    if (alg.ASN1_CONTEXT_MEMBER(len) != sizeof(ec_pubkey_oid) - 1 ||
+        memcmp(alg.ASN1_CONTEXT_MEMBER(p), ec_pubkey_oid, sizeof(ec_pubkey_oid) - 1)) {
         return -5;
     }
 
@@ -349,6 +276,8 @@ hkdf(uint8_t *ikm, uint16_t ikm_len, uint8_t *info, uint16_t info_len,
         goto error;
     }
 
+    bootutil_hmac_sha256_drop(&hmac);
+
     /*
      * Expand
      */
@@ -388,6 +317,8 @@ hkdf(uint8_t *ikm, uint16_t ikm_len, uint8_t *info, uint16_t info_len,
             goto error;
         }
 
+        bootutil_hmac_sha256_drop(&hmac);
+
         if (len > BOOTUTIL_CRYPTO_SHA256_DIGEST_SIZE) {
             memcpy(&okm[off], T, BOOTUTIL_CRYPTO_SHA256_DIGEST_SIZE);
             len -= BOOTUTIL_CRYPTO_SHA256_DIGEST_SIZE;
@@ -397,7 +328,6 @@ hkdf(uint8_t *ikm, uint16_t ikm_len, uint8_t *info, uint16_t info_len,
         }
     }
 
-    bootutil_hmac_sha256_drop(&hmac);
     return 0;
 
 error:
@@ -417,6 +347,7 @@ int
 boot_enc_drop(struct enc_key_data *enc_state, uint8_t slot)
 {
     bootutil_aes_ctr_drop(&enc_state[slot].aes_ctr);
+    enc_state[slot].valid = 0;
     return 0;
 }
 
@@ -429,7 +360,6 @@ boot_enc_set_key(struct enc_key_data *enc_state, uint8_t slot,
     rc = bootutil_aes_ctr_set_key(&enc_state[slot].aes_ctr, bs->enckey[slot]);
     if (rc != 0) {
         boot_enc_drop(enc_state, slot);
-        enc_state[slot].valid = 0;
         return -1;
     }
 
@@ -460,8 +390,8 @@ _Static_assert(EC_CIPHERKEY_INDEX + BOOT_ENC_KEY_SIZE == EXPECTED_ENC_LEN,
         "Please fix ECIES-X25519 component indexes");
 #endif
 
-#if defined(MCUBOOT_ENCRYPT_RSA) || \
-    (defined(MCUBOOT_ENCRYPT_EC256) && defined(MCUBOOT_USE_MBED_TLS))
+#if ( (defined(MCUBOOT_ENCRYPT_RSA) && defined(MCUBOOT_USE_MBED_TLS) && !defined(MCUBOOT_USE_PSA_CRYPTO)) || \
+      (defined(MCUBOOT_ENCRYPT_EC256) && defined(MCUBOOT_USE_MBED_TLS)) )
 #if MBEDTLS_VERSION_NUMBER >= 0x03000000
 static int fake_rng(void *p_rng, unsigned char *output, size_t len)
 {
@@ -474,9 +404,9 @@ static int fake_rng(void *p_rng, unsigned char *output, size_t len)
 
     return 0;
 }
-#endif
-#endif /* defined(MCUBOOT_ENCRYPT_RSA) ||
-          defined(MCUBOOT_ENCRYPT_EC256) && defined(MCUBOOT_USE_MBED_TLS) */
+#endif /* MBEDTLS_VERSION_NUMBER */
+#endif /* (MCUBOOT_ENCRYPT_RSA && MCUBOOT_USE_MBED_TLS && !MCUBOOT_USE_PSA_CRYPTO) ||
+          (MCUBOOT_ENCRYPT_EC256 && MCUBOOT_USE_MBED_TLS) */
 
 /*
  * Decrypt an encryption key TLV.
@@ -485,10 +415,10 @@ static int fake_rng(void *p_rng, unsigned char *output, size_t len)
  * @param enckey An AES-128 or AES-256 key sized buffer to store to plain key.
  */
 int
-boot_enc_decrypt(const uint8_t *buf, uint8_t *enckey)
+boot_decrypt_key(const uint8_t *buf, uint8_t *enckey)
 {
 #if defined(MCUBOOT_ENCRYPT_RSA)
-    mbedtls_rsa_context rsa;
+    bootutil_rsa_context rsa;
     uint8_t *cp;
     uint8_t *cpend;
     size_t olen;
@@ -515,28 +445,22 @@ boot_enc_decrypt(const uint8_t *buf, uint8_t *enckey)
 
 #if defined(MCUBOOT_ENCRYPT_RSA)
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
-    mbedtls_rsa_init(&rsa);
-    mbedtls_rsa_set_padding(&rsa, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
-#else
-    mbedtls_rsa_init(&rsa, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
-#endif
+    bootutil_rsa_init(&rsa);
     cp = (uint8_t *)bootutil_enc_key.key;
     cpend = cp + *bootutil_enc_key.len;
 
-    rc = parse_rsa_enckey(&rsa, &cp, cpend);
+    /* The enckey is encrypted through RSA so for decryption we need the private key */
+    rc = bootutil_rsa_parse_private_key(&rsa, &cp, cpend);
     if (rc) {
-        mbedtls_rsa_free(&rsa);
+        bootutil_rsa_drop(&rsa);
         return rc;
     }
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
-    rc = mbedtls_rsa_rsaes_oaep_decrypt(&rsa, fake_rng, NULL,
-            NULL, 0, &olen, buf, enckey, BOOT_ENC_KEY_SIZE);
-#else
-    rc = mbedtls_rsa_rsaes_oaep_decrypt(&rsa, NULL, NULL, MBEDTLS_RSA_PRIVATE,
-            NULL, 0, &olen, buf, enckey, BOOT_ENC_KEY_SIZE);
-#endif
-    mbedtls_rsa_free(&rsa);
+
+    rc = bootutil_rsa_oaep_decrypt(&rsa, &olen, buf, enckey, BOOT_ENC_KEY_SIZE);
+    bootutil_rsa_drop(&rsa);
+    if (rc) {
+        return rc;
+    }
 
 #endif /* defined(MCUBOOT_ENCRYPT_RSA) */
 
@@ -683,7 +607,7 @@ boot_enc_decrypt(const uint8_t *buf, uint8_t *enckey)
  * Load encryption key.
  */
 int
-boot_enc_load(struct enc_key_data *enc_state, int image_index,
+boot_enc_load(struct enc_key_data *enc_state, int slot,
         const struct image_header *hdr, const struct flash_area *fap,
         struct boot_status *bs)
 {
@@ -695,14 +619,7 @@ boot_enc_load(struct enc_key_data *enc_state, int image_index,
 #else
     uint8_t buf[EXPECTED_ENC_LEN];
 #endif
-    uint8_t slot;
     int rc;
-
-    rc = flash_area_id_to_multi_image_slot(image_index, flash_area_get_id(fap));
-    if (rc < 0) {
-        return rc;
-    }
-    slot = rc;
 
     /* Already loaded... */
     if (enc_state[slot].valid) {
@@ -736,7 +653,7 @@ boot_enc_load(struct enc_key_data *enc_state, int image_index,
         return -1;
     }
 
-    return boot_enc_decrypt(buf, bs->enckey[slot]);
+    return boot_decrypt_key(buf, bs->enckey[slot]);
 }
 
 bool

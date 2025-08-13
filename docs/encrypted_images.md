@@ -148,12 +148,13 @@ occurs and the information is spread across multiple areas.
 ## [Creating your keys with imgtool](#creating-your-keys-with-imgtool)
 
 `imgtool` can generate keys by using `imgtool keygen -k <output.pem> -t <type>`,
- where type can be one of `rsa-2048`, `rsa-3072`, `ecdsa-p256`, `ecdsa-p224`
+ where type can be one of `rsa-2048`, `rsa-3072`, `ecdsa-p256`
 or `ed25519`. This will generate a keypair or private key.
 
 To extract the public key in source file form, use
-`imgtool getpub -k <input.pem> -l <lang>`, where lang can be one of `c` or
-`rust` (defaults to `c`).
+`imgtool getpub -k <input.pem> -e <encoding>`, where `encoding` can be one of
+`lang-c` or `lang-rust` (defaults to `lang-c`). To extract a public key in PEM
+format, use `imgtool getpub -k <input.pem> -e pem`.
 
 If using AES-KW, follow the steps in the next section to generate the
 required keys.

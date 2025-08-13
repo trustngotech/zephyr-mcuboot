@@ -24,6 +24,12 @@ Before making a release, update the `docs/release-notes.md` file
 to describe the release. This should be a high-level description of
 the changes, not a list of the git commits.
 
+Provided that changes going into the release have followed the
+contribution guidelines, this should mostly consist of collecting the
+various snippets in the `docs/release-notes.d` directory.  After
+incorporating these snippets into the release notes, the snippet files
+should be removed to ready the directory for the next release cycle.
+
 ## Release candidates
 
 Before each release, tags are made (see below) for at least one
@@ -58,6 +64,15 @@ the RC step is finished, the release needs to be exported by modifying
 `repository.yml` in the root directory; it must be updated with the
 new release version, including updates to the pseudo keys
 (`*-(latest|dev)`).
+
+## Zephyr release information
+
+There is a version file used by Zephyr builds to indicate the version
+of MCUboot being used which needs to be updated at
+`boot/zephyr/VERSION`. For alignment with Zephyr versions, development
+versions should set `PATCHLEVEL` to `99` and `EXTRAVERSION` to `dev`,
+whilst production versions should correctly set `PATCHLEVEL` and clear
+`EXTRAVERSION`.
 
 ## Tagging and release
 

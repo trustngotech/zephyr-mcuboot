@@ -1,43 +1,11 @@
 # CMakeLists.txt for building mcuboot as a Zephyr project
 #
 # Copyright (c) 2017 Open Source Foundries Limited
+# Copyright (c) 2023 Nordic Semiconductor ASA
 #
 # SPDX-License-Identifier: Apache-2.0
 
 cmake_minimum_required(VERSION 3.13.1)
-
-# Add a common dts overlay necessary to ensure mcuboot is linked into,
-# and fits inside, the boot partition. (If the user specified a
-# DTC_OVERLAY_FILE on the CMake command line, we need to append onto
-# the list).
-if(DTC_OVERLAY_FILE)
-  set(DTC_OVERLAY_FILE
-    "${DTC_OVERLAY_FILE} ${CMAKE_CURRENT_LIST_DIR}/dts.overlay"
-    CACHE STRING "" FORCE
-    )
-else()
-  set(DTC_OVERLAY_FILE ${CMAKE_CURRENT_LIST_DIR}/dts.overlay)
-endif()
-
-# Enable Zephyr runner options which request mass erase if so
-# configured.
-#
-# Note that this also disables the default "leave" option when
-# targeting STM32 DfuSe devices with dfu-util, making the chip stay in
-# the bootloader after flashing.
-#
-# That's the right thing, because mcuboot has nothing to do since the
-# chip was just erased. The next thing the user is going to want to do
-# is flash the application. (Developers can reset DfuSE devices
-# manually to test mcuboot behavior on an otherwise erased flash
-# device.)
-macro(app_set_runner_args)
-  if(CONFIG_ZEPHYR_TRY_MASS_ERASE)
-    board_runner_args(dfu-util "--dfuse-modifiers=force:mass-erase")
-    board_runner_args(pyocd "--flash-opt=-e=chip")
-    board_runner_args(nrfjprog "--erase")
-  endif()
-endmacro()
 
 # find_package(Zephyr) in order to load application boilerplate:
 # http://docs.zephyrproject.org/application/application.html
@@ -89,6 +57,7 @@ endif()
 # Zephyr port-specific sources.
 zephyr_library_sources(
   main.c
+  io.c
   flash_map_extended.c
   os.c
   keys.c
@@ -98,11 +67,28 @@ if(DEFINED CONFIG_ENABLE_MGMT_PERUSER)
   zephyr_library_sources(
     boot_serial_extensions.c
     )
+
+  zephyr_linker_sources_ifdef(
+    CONFIG_ENABLE_MGMT_PERUSER
+    SECTIONS include/boot_serial/boot_serial.ld
+  )
+
+  if(DEFINED CONFIG_BOOT_MGMT_CUSTOM_STORAGE_ERASE OR DEFINED CONFIG_BOOT_MGMT_CUSTOM_IMG_LIST)
+    zephyr_library_sources(
+      boot_serial_extension_zephyr_basic.c
+      )
+  endif()
 endif()
 
 if(NOT DEFINED CONFIG_FLASH_PAGE_LAYOUT)
   zephyr_library_sources(
     flash_map_legacy.c
+    )
+endif()
+
+if(DEFINED CONFIG_BOOT_SHARE_BACKEND_RETENTION)
+  zephyr_library_sources(
+    shared_data.c
     )
 endif()
 
@@ -113,11 +99,24 @@ zephyr_library_sources(
   ${BOOT_DIR}/bootutil/src/tlv.c
   ${BOOT_DIR}/bootutil/src/encrypted.c
   ${BOOT_DIR}/bootutil/src/image_rsa.c
-  ${BOOT_DIR}/bootutil/src/image_ec256.c
+  ${BOOT_DIR}/bootutil/src/image_ecdsa.c
   ${BOOT_DIR}/bootutil/src/image_ed25519.c
   ${BOOT_DIR}/bootutil/src/bootutil_misc.c
   ${BOOT_DIR}/bootutil/src/fault_injection_hardening.c
   )
+
+if(DEFINED CONFIG_MEASURED_BOOT OR DEFINED CONFIG_BOOT_SHARE_DATA)
+  zephyr_library_sources(
+    ${BOOT_DIR}/bootutil/src/boot_record.c
+    )
+
+  # Set a define for this file which will allow inclusion of the Zephyr version
+  # include file
+  set_source_files_properties(
+    ${BOOT_DIR}/bootutil/src/boot_record.c
+    PROPERTIES COMPILE_FLAGS -DZEPHYR_VER_INCLUDE=1
+    )
+endif()
 
 # library which might be common source code for MCUBoot and an application
 zephyr_link_libraries(MCUBOOT_BOOTUTIL)
@@ -133,6 +132,11 @@ zephyr_library_sources(
   ${BOOT_DIR}/zephyr/single_loader.c
   )
 zephyr_library_include_directories(${BOOT_DIR}/bootutil/src)
+elseif(CONFIG_BOOT_FIRMWARE_LOADER)
+zephyr_library_sources(
+  ${BOOT_DIR}/zephyr/firmware_loader.c
+  )
+zephyr_library_include_directories(${BOOT_DIR}/bootutil/src)
 else()
 zephyr_library_sources(
   ${BOOT_DIR}/bootutil/src/loader.c
@@ -143,7 +147,7 @@ zephyr_library_sources(
   )
 endif()
 
-if(CONFIG_BOOT_SIGNATURE_TYPE_ECDSA_P256 OR CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_SERIAL_ENCRYPT_EC256)
+if(CONFIG_BOOT_SIGNATURE_TYPE_ECDSA_P256 OR CONFIG_BOOT_ENCRYPT_EC256)
   zephyr_library_include_directories(
     ${MBEDTLS_ASN1_DIR}/include
     )
@@ -232,7 +236,7 @@ elseif(CONFIG_BOOT_SIGNATURE_TYPE_ED25519 OR CONFIG_BOOT_ENCRYPT_X25519)
   )
 endif()
 
-if(CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_ENCRYPT_X25519 OR CONFIG_BOOT_SERIAL_ENCRYPT_EC256)
+if(CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_ENCRYPT_X25519)
   zephyr_library_sources(
     ${TINYCRYPT_DIR}/source/aes_encrypt.c
     ${TINYCRYPT_DIR}/source/aes_decrypt.c
@@ -251,12 +255,7 @@ endif()
 if(CONFIG_MCUBOOT_SERIAL)
   zephyr_sources(${BOOT_DIR}/zephyr/serial_adapter.c)
   zephyr_sources(${BOOT_DIR}/boot_serial/src/boot_serial.c)
-  zephyr_sources(${BOOT_DIR}/boot_serial/src/serial_recovery_cbor.c)
-  zephyr_sources(${BOOT_DIR}/boot_serial/src/zcbor_decode.c)
-  zephyr_sources(${BOOT_DIR}/boot_serial/src/zcbor_encode.c)
-  zephyr_sources(${BOOT_DIR}/boot_serial/src/zcbor_common.c)
-
-  zephyr_sources_ifdef(CONFIG_BOOT_MGMT_ECHO ${BOOT_DIR}/boot_serial/src/serial_recovery_echo.c)
+  zephyr_sources(${BOOT_DIR}/boot_serial/src/zcbor_bulk.c)
 
   zephyr_include_directories(${BOOT_DIR}/bootutil/include)
   zephyr_include_directories(${BOOT_DIR}/boot_serial/include)
@@ -266,6 +265,12 @@ if(CONFIG_MCUBOOT_SERIAL)
     CONFIG_BOOT_ERASE_PROGRESSIVELY
     ${BOOT_DIR}/bootutil/src
     )
+
+  if(CONFIG_BOOT_ENCRYPT_IMAGE)
+    zephyr_library_sources(
+      ${BOOT_DIR}/boot_serial/src/boot_serial_encryption.c
+    )
+  endif()
 endif()
 
 if(NOT CONFIG_BOOT_SIGNATURE_KEY_FILE STREQUAL "")
@@ -351,4 +356,169 @@ if(CONFIG_MCUBOOT_CLEANUP_ARM_CORE)
 zephyr_library_sources(
   ${BOOT_DIR}/zephyr/arm_cleanup.c
 )
+endif()
+
+if(CONFIG_MCUBOOT_BOOT_BANNER)
+  # Replace Zephyr's boot banner with the MCUboot one
+  zephyr_sources(kernel/banner.c)
+endif()
+
+if(SYSBUILD)
+  function(align_up num align result)
+    math(EXPR out "(((${num}) + ((${align}) - 1)) & ~((${align}) - 1))")
+    set(${result} "${out}" PARENT_SCOPE)
+  endfunction()
+
+  function(dt_get_parent node)
+    string(FIND "${${node}}" "/" pos REVERSE)
+
+    if(pos EQUAL -1)
+      message(ERROR "Unable to get parent of node: ${${node}}")
+    endif()
+
+    string(SUBSTRING "${${node}}" 0 ${pos} ${node})
+    set(${node} "${${node}}" PARENT_SCOPE)
+  endfunction()
+
+  if(CONFIG_SINGLE_APPLICATION_SLOT OR CONFIG_BOOT_FIRMWARE_LOADER OR CONFIG_BOOT_SWAP_USING_SCRATCH OR CONFIG_BOOT_SWAP_USING_MOVE OR CONFIG_BOOT_UPGRADE_ONLY OR CONFIG_BOOT_DIRECT_XIP OR CONFIG_BOOT_RAM_LOAD)
+    # TODO: RAM LOAD support
+    dt_nodelabel(slot0_flash NODELABEL "slot0_partition")
+    dt_get_parent(slot0_flash)
+    dt_get_parent(slot0_flash)
+
+    if(NOT CONFIG_SINGLE_APPLICATION_SLOT)
+      dt_nodelabel(slot1_flash NODELABEL "slot1_partition")
+      dt_get_parent(slot1_flash)
+      dt_get_parent(slot1_flash)
+
+      if(NOT "${slot0_flash}" STREQUAL "${slot1_flash}")
+        # Check both slots for the one with the largest write/erase block size
+        dt_prop(erase_size_slot0 PATH "${slot0_flash}" PROPERTY "erase-block-size")
+        dt_prop(write_size_slot0 PATH "${slot0_flash}" PROPERTY "write-block-size")
+        dt_prop(erase_size_slot1 PATH "${slot1_flash}" PROPERTY "erase-block-size")
+        dt_prop(write_size_slot1 PATH "${slot1_flash}" PROPERTY "write-block-size")
+
+        if(DEFINED erase_size_slot0 AND DEFINED erase_size_slot1)
+          if(${erase_size_slot0} GREATER ${erase_size_slot1})
+            set(erase_size ${erase_size_slot0})
+          else()
+            set(erase_size ${erase_size_slot1})
+          endif()
+        elseif(DEFINED erase_size_slot0)
+          set(erase_size ${erase_size_slot0})
+        elseif(DEFINED erase_size_slot1)
+          set(erase_size ${erase_size_slot1})
+        endif()
+
+        if(DEFINED write_size_slot0 AND DEFINED write_size_slot1)
+          if(${write_size_slot0} GREATER ${write_size_slot1})
+            set(write_size ${write_size_slot0})
+          else()
+            set(write_size ${write_size_slot1})
+          endif()
+        elseif(DEFINED write_size_slot0)
+          set(write_size ${write_size_slot0})
+        elseif(DEFINED write_size_slot1)
+          set(write_size ${write_size_slot1})
+        endif()
+      else()
+        dt_prop(erase_size PATH "${slot0_flash}" PROPERTY "erase-block-size")
+        dt_prop(write_size PATH "${slot0_flash}" PROPERTY "write-block-size")
+      endif()
+    else()
+      dt_prop(erase_size PATH "${slot0_flash}" PROPERTY "erase-block-size")
+      dt_prop(write_size PATH "${slot0_flash}" PROPERTY "write-block-size")
+    endif()
+
+    if(NOT DEFINED erase_size)
+      message(WARNING "Unable to determine erase size of slot0 or slot1 partition, setting to 1 (this is probably wrong)")
+      set(erase_size 1)
+    endif()
+
+    if(NOT DEFINED write_size)
+      message(WARNING "Unable to determine write size of slot0 or slot1 partition, setting to 8 (this is probably wrong)")
+      set(write_size 8)
+    endif()
+
+    if(${write_size} LESS 8)
+      set(max_align_size 8)
+    else()
+      set(max_align_size ${write_size})
+    endif()
+
+    set(key_size 0)
+
+    # Boot trailer magic size
+    set(boot_magic_size 16)
+
+    # Estimates for trailer TLV data size, this was taken from hello world builds for nrf52840dk
+    if(CONFIG_BOOT_SIGNATURE_TYPE_RSA)
+      if(CONFIG_BOOT_SIGNATURE_TYPE_RSA_LEN EQUAL 3072)
+        set(boot_tlv_estimate 464)
+      else()
+        set(boot_tlv_estimate 336)
+      endif()
+    elseif(CONFIG_BOOT_SIGNATURE_TYPE_ECDSA_P256)
+      set(boot_tlv_estimate 150)
+    elseif(CONFIG_BOOT_SIGNATURE_TYPE_ED25519)
+      set(boot_tlv_estimate 144)
+    else()
+      set(boot_tlv_estimate 40)
+    endif()
+
+    if(CONFIG_BOOT_ENCRYPT_RSA OR CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_BOOT_ENCRYPT_X25519)
+      # 128-bit AES key size
+      set(boot_enc_key_size 16)
+
+      if(CONFIG_BOOT_SWAP_SAVE_ENCTLV)
+        if(CONFIG_BOOT_ENCRYPT_RSA)
+          set(key_size 256)
+        elseif(CONFIG_BOOT_ENCRYPT_EC256)
+          math(EXPR key_size "65 + 32 + ${boot_enc_key_size}")
+        elseif(CONFIG_BOOT_ENCRYPT_X25519)
+          math(EXPR key_size "32 + 32 + ${boot_enc_key_size}")
+        endif()
+      else()
+        set(key_size "${boot_enc_key_size}")
+      endif()
+
+      align_up(${key_size} ${max_align_size} key_size)
+      math(EXPR key_size "${key_size} * 2")
+    endif()
+
+    align_up(${boot_magic_size} ${write_size} boot_magic_size)
+
+    if(CONFIG_SINGLE_APPLICATION_SLOT OR CONFIG_BOOT_FIRMWARE_LOADER)
+      set(boot_swap_data_size 0)
+    else()
+      math(EXPR boot_swap_data_size "${max_align_size} * 4")
+    endif()
+
+    if(CONFIG_BOOT_SWAP_USING_SCRATCH OR CONFIG_BOOT_SWAP_USING_MOVE)
+      math(EXPR boot_status_data_size "${CONFIG_BOOT_MAX_IMG_SECTORS} * (3 * ${write_size})")
+    else()
+      set(boot_status_data_size 0)
+    endif()
+
+    math(EXPR required_size "${key_size} + ${boot_magic_size} + ${boot_swap_data_size} + ${boot_status_data_size} + ${boot_tlv_estimate}")
+    align_up(${required_size} ${erase_size} required_size)
+
+    if(CONFIG_SINGLE_APPLICATION_SLOT OR CONFIG_BOOT_FIRMWARE_LOADER)
+      set(required_upgrade_size "0")
+    else()
+      math(EXPR required_upgrade_size "${boot_magic_size} + ${boot_swap_data_size} + ${boot_status_data_size}")
+      align_up(${required_upgrade_size} ${erase_size} required_upgrade_size)
+    endif()
+
+    if(CONFIG_BOOT_SWAP_USING_MOVE)
+      math(EXPR required_size "${required_size} + ${erase_size}")
+      math(EXPR required_upgrade_size "${required_upgrade_size} + ${erase_size}")
+    endif()
+  else()
+    set(required_size 0)
+    set(required_upgrade_size 0)
+  endif()
+
+  set(mcuboot_image_footer_size ${required_size} CACHE INTERNAL "Estimated MCUboot image trailer size" FORCE)
+  set(mcuboot_image_upgrade_footer_size ${required_upgrade_size} CACHE INTERNAL "Estimated MCUboot update image trailer size" FORCE)
 endif()

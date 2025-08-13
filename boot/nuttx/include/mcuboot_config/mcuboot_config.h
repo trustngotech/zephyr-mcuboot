@@ -58,6 +58,12 @@
  * the default upgrade mode.
  */
 
+/* Use image swap without using scratch area.*/
+
+#ifdef CONFIG_MCUBOOT_SWAP_USING_MOVE
+#  define MCUBOOT_SWAP_USING_MOVE 1
+#endif
+
 /* Enable the overwrite-only code path. */
 
 #ifdef CONFIG_MCUBOOT_OVERWRITE_ONLY
@@ -181,6 +187,15 @@
  */
 
 #ifdef CONFIG_MCUBOOT_WATCHDOG
+
+#ifndef CONFIG_MCUBOOT_WATCHDOG_DEVPATH
+#  define CONFIG_MCUBOOT_WATCHDOG_DEVPATH "/dev/watchdog0"
+#endif
+
+#ifndef CONFIG_MCUBOOT_WATCHDOG_TIMEOUT
+#  define CONFIG_MCUBOOT_WATCHDOG_TIMEOUT 10000      /* Watchdog timeout in ms */
+#endif
+
 #  define MCUBOOT_WATCHDOG_FEED()       do                           \
                                           {                          \
                                             mcuboot_watchdog_feed(); \

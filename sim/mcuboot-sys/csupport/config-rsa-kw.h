@@ -1,7 +1,7 @@
 /*
  *  Minimal configuration for using TLS in the bootloader
  *
- *  Copyright (C) 2006-2021, ARM Limited, All Rights Reserved
+ *  Copyright (C) 2006-2023, ARM Limited, All Rights Reserved
  *  Copyright (C) 2016, Linaro Ltd
  *  SPDX-License-Identifier: Apache-2.0
  *
@@ -28,6 +28,10 @@
 
 #ifndef MCUBOOT_MBEDTLS_CONFIG_RSA_KW
 #define MCUBOOT_MBEDTLS_CONFIG_RSA_KW
+
+#if defined(MCUBOOT_USE_PSA_CRYPTO)
+#include "config-add-psa-crypto.h"
+#endif /* defined(MCUBOOT_USE_PSA_CRYPTO) */
 
 #ifdef CONFIG_MCUBOOT_SERIAL
 /* Mcuboot uses mbedts-base64 for serial protocol encoding. */
@@ -76,7 +80,5 @@
 
 /* Save ROM and a few bytes of RAM by specifying our own ciphersuite list */
 #define MBEDTLS_SSL_CIPHERSUITES MBEDTLS_TLS_ECJPAKE_WITH_AES_128_CCM_8
-
-#include "mbedtls/check_config.h"
 
 #endif /* MCUBOOT_MBEDTLS_CONFIG_RSA_KW */

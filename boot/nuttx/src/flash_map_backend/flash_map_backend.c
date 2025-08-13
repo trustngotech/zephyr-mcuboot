@@ -421,7 +421,7 @@ int flash_area_read(const struct flash_area *fa, uint32_t off,
   /* Reposition the file offset from the beginning of the flash area */
 
   seekpos = lseek(dev->fd, (off_t)off, SEEK_SET);
-  if (seekpos != off)
+  if (seekpos != (off_t)off)
     {
       int errcode = errno;
 
@@ -489,7 +489,7 @@ int flash_area_write(const struct flash_area *fa, uint32_t off,
   /* Reposition the file offset from the beginning of the flash area */
 
   seekpos = lseek(dev->fd, (off_t)off, SEEK_SET);
-  if (seekpos != off)
+  if (seekpos != (off_t)off)
     {
       int errcode = errno;
 
@@ -603,7 +603,7 @@ uint32_t flash_area_align(const struct flash_area *fa)
 
   const uint32_t minimum_write_length = 1;
 
-  BOOT_LOG_INF("ID:%" PRIu8 " align:%" PRIu8,
+  BOOT_LOG_INF("ID:%" PRIu8 " align:%" PRIu32,
                fa->fa_id, minimum_write_length);
 
   return minimum_write_length;
@@ -809,4 +809,36 @@ int flash_area_id_from_image_offset(uint32_t offset)
   BOOT_LOG_ERR("Unexpected Request: offset:%" PRIu32, offset);
 
   return ERROR; /* flash_area_open will fail on that */
+}
+
+/****************************************************************************
+ * Name: flash_area_get_sector
+ *
+ * Description:
+ *   Retrieve the flash sector a given offset belongs to.
+ *
+ * Input Parameters:
+ *   fap - flash area structure
+ *   off - address offset.
+ *   sector - flash sector
+ *
+ * Returned Value:
+ *   Returns 0 on success, or an error code on failure.
+ *
+ ****************************************************************************/
+
+int flash_area_get_sector(const struct flash_area *fap, off_t off,
+                          struct flash_sector *fs)
+{
+  off_t offset = fap->fa_off + off;
+  struct flash_device_s *dev = lookup_flash_device_by_offset(offset);
+  if (dev == NULL)
+    {
+      return -errno;
+    }
+
+  fs->fs_off = (offset / dev->mtdgeo.erasesize) * dev->mtdgeo.erasesize;
+  fs->fs_size = dev->mtdgeo.erasesize;
+
+  return 0;
 }

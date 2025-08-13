@@ -4,7 +4,6 @@ ED25519 key management
 
 # SPDX-License-Identifier: Apache-2.0
 
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -34,7 +33,12 @@ class Ed25519Public(KeyClass):
                 encoding=serialization.Encoding.DER,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
-    def get_private_bytes(self, minimal):
+    def get_public_pem(self):
+        return self._get_public().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo)
+
+    def get_private_bytes(self, minimal, format):
         self._unsupported('get_private_bytes')
 
     def export_private(self, path, passwd=None):
@@ -57,6 +61,13 @@ class Ed25519Public(KeyClass):
     def sig_len(self):
         return 64
 
+    def verify_digest(self, signature, digest):
+        """Verify that signature is valid for given digest"""
+        k = self.key
+        if isinstance(self.key, ed25519.Ed25519PrivateKey):
+            k = self.key.public_key()
+        return k.verify(signature=signature, data=digest)
+
 
 class Ed25519(Ed25519Public):
     """
@@ -75,7 +86,7 @@ class Ed25519(Ed25519Public):
     def _get_public(self):
         return self.key.public_key()
 
-    def get_private_bytes(self, minimal):
+    def get_private_bytes(self, minimal, format):
         raise Ed25519UsageError("Operation not supported with {} keys".format(
             self.shortname()))
 
@@ -98,10 +109,3 @@ class Ed25519(Ed25519Public):
     def sign_digest(self, digest):
         """Return the actual signature"""
         return self.key.sign(data=digest)
-
-    def verify_digest(self, signature, digest):
-        """Verify that signature is valid for given digest"""
-        k = self.key
-        if isinstance(self.key, ed25519.Ed25519PrivateKey):
-            k = self.key.public_key()
-        return k.verify(signature=signature, data=digest)

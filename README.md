@@ -4,6 +4,7 @@
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/12307/badge.svg)][coverity]
 [![Build Status (Sim)](https://github.com/mcu-tools/mcuboot/workflows/Sim/badge.svg)][sim]
 [![Build Status (Mynewt)](https://github.com/mcu-tools/mcuboot/workflows/Mynewt/badge.svg)][mynewt]
+[![Build Status (Espressif)](https://github.com/mcu-tools/mcuboot/workflows/Espressif/badge.svg)][espressif]
 [![Publishing Status (imgtool)](https://github.com/mcu-tools/mcuboot/workflows/imgtool/badge.svg)][imgtool]
 [![Build Status (Travis CI)](https://img.shields.io/travis/mcu-tools/mcuboot/main.svg?label=travis-ci)][travis]
 [![Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)][license]
@@ -12,11 +13,12 @@
 [coverity]: https://scan.coverity.com/projects/mcuboot
 [sim]: https://github.com/mcu-tools/mcuboot/actions?query=workflow:Sim
 [mynewt]: https://github.com/mcu-tools/mcuboot/actions?query=workflow:Mynewt
+[espressif]: https://github.com/mcu-tools/mcuboot/actions?query=workflow:Espressif
 [imgtool]: https://github.com/mcu-tools/mcuboot/actions?query=workflow:imgtool
 [travis]: https://travis-ci.org/mcu-tools/mcuboot
 [license]: https://github.com/mcu-tools/mcuboot/blob/main/LICENSE
 
-This is MCUboot version 1.10.0-dev
+This is MCUboot version 2.1.0
 
 MCUboot is a secure bootloader for 32-bits microcontrollers. It defines a
 common infrastructure for the bootloader and the system flash layout on
@@ -79,5 +81,5 @@ Developers are welcome!
 Use the following links to join or see more about the project:
 
 * [Our developer mailing list](https://groups.io/g/MCUBoot)
-* [Our Slack channel](https://mcuboot.slack.com/) <br />
-  Get [your invite](https://join.slack.com/t/mcuboot/shared_invite/MjE2NDcwMTQ2MTYyLTE1MDA4MTIzNTAtYzgyZTU0NjFkMg)
+* [Our Discord channel](https://discord.com/channels/1106321706588577904/1106322802308550716) <br />
+  Get [your invite](https://discord.com/invite/5PpXhvda5p)

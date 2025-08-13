@@ -38,6 +38,7 @@ The MCUboot documentation is composed of the following pages:
 - [Encrypted images](encrypted_images.md)
 - [imgtool](imgtool.md) - image signing and key management
 - [ECDSA](ecdsa.md) - information about ECDSA signature formats
+- [Serial Recovery](serial_recovery.md) - MCUmgr as the serial recovery protocol
 - Usage instructions:
   - [Zephyr](readme-zephyr.md)
   - [Apache Mynewt](readme-mynewt.md)
@@ -45,8 +46,8 @@ The MCUboot documentation is composed of the following pages:
   - [RIOT](readme-riot.md)
   - [Mbed OS](readme-mbed.md)
   - [Espressif](readme-espressif.md)
-  - [Cypress/Infineon](../boot/cypress/README.md)
-  - [Simulator](../sim/README.rst)
+  - [Cypress/Infineon](https://github.com/mcu-tools/mcuboot/tree/main/boot/cypress/README.md)
+  - [Simulator](https://github.com/mcu-tools/mcuboot/tree/main/sim/README.rst)
 - Testing
   - [Zephyr](testplan-zephyr.md) - Zephyr test plan
   - [Apache Mynewt](testplan-mynewt.md) - Apache Mynewt test plan
@@ -86,7 +87,7 @@ Developers are welcome!
 Use the following links to join or see more about the project:
 
 * [Our developer mailing list](https://groups.io/g/MCUBoot)
-* [Our Slack channel](https://mcuboot.slack.com/) <br />
-  Get [your invite](https://join.slack.com/t/mcuboot/shared_invite/MjE2NDcwMTQ2MTYyLTE1MDA4MTIzNTAtYzgyZTU0NjFkMg)
+* [Our Discord channel](https://discord.com/channels/1106321706588577904/1106322802308550716) <br />
+  Get [your invite](https://discord.com/invite/5PpXhvda5p)
 * [Current members](https://github.com/mcu-tools/mcuboot/wiki/Members)
 * [Project charter](https://github.com/mcu-tools/mcuboot/wiki/MCUboot-Project-Charter)

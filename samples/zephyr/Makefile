@@ -50,9 +50,13 @@
 
 # Extra .conf fragments to merge into the MCUboot .config, as a
 # semicolon-separated list (i.e., a CMake list).
-BOOTLOADER_OVERLAY_CONFIG ?=
+BOOTLOADER_EXTRA_CONF_FILE ?=
 
 BOARD ?= frdm_k64f
+SLOT_SIZE ?= 0x60000
+BOOT_ADDR ?= 0x0
+IMG0_ADDR ?= 0x20000
+IMG1_ADDR ?= 0x80000
 
 .PHONY: check boot hello1 clean_boot clean_hello1 \
 	hello2 clean_hello2 flash_boot flash_hello1 flash_hello2
@@ -106,7 +110,7 @@ boot: check
 	@rm -f mcuboot.bin
 	(mkdir -p $(BUILD_DIR_BOOT) && \
 		cd $(BUILD_DIR_BOOT) && \
-		cmake -DOVERLAY_CONFIG=$(BOOTLOADER_OVERLAY_CONFIG) \
+		cmake -DEXTRA_CONF_FILE=$(BOOTLOADER_EXTRA_CONF_FILE) \
 			-G"Ninja" \
 			-DBOARD=$(BOARD) \
 			$(SOURCE_DIRECTORY)/../../boot/zephyr && \
@@ -130,7 +134,7 @@ hello1: check
 		--header-size $(BOOT_HEADER_LEN) \
 		--align $(FLASH_ALIGNMENT) \
 		--version 1.2 \
-		--slot-size 0x60000 \
+		--slot-size $(SLOT_SIZE) \
 		$(BUILD_DIR_HELLO1)/zephyr/zephyr.bin \
 		signed-hello1.bin
 
@@ -155,7 +159,7 @@ hello2: check
 		--header-size $(BOOT_HEADER_LEN) \
 		--align $(FLASH_ALIGNMENT) \
 		--version 1.2 \
-		--slot-size 0x60000 \
+		--slot-size $(SLOT_SIZE) \
 		--pad \
 		$(BUILD_DIR_HELLO2)/zephyr/zephyr.bin \
 		signed-hello2.bin
@@ -167,16 +171,16 @@ clean_hello2: check
 # are hardcoded at this time.
 
 flash_boot:
-	$(PYOCD) flash -e chip -a 0 mcuboot.bin
+	$(PYOCD) flash -e chip -a $(BOOT_ADDR) mcuboot.bin
 
 flash_hello1:
-	$(PYOCD) flash -a 0x20000 signed-hello1.bin
+	$(PYOCD) flash -a $(IMG0_ADDR) signed-hello1.bin
 
 flash_hello2:
-	$(PYOCD) flash -a 0x80000 signed-hello2.bin
+	$(PYOCD) flash -a $(IMG1_ADDR) signed-hello2.bin
 
 flash_full:
-	$(PYOCD) flash -e chip -a 0 full.bin
+	$(PYOCD) flash -e chip -a $(BOOT_ADDR) full.bin
 
 # These test- targets reinvoke make with the configuration set to test
 # various configurations.  This will generally be followed by using
@@ -189,7 +193,7 @@ flash_full:
 # reset: hello1 runs
 test-good-rsa: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-rsa.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-rsa.conf \
 		all
 
 # Test a good image, with a good upgrade, using ECDSA signatures.
@@ -199,7 +203,7 @@ test-good-rsa: clean
 # reset: hello1 runs
 test-good-ecdsa: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-ecdsa-p256.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-ecdsa-p256.conf \
 		SIGNING_KEY=../../root-ec-p256.pem \
 		all
 
@@ -211,7 +215,7 @@ test-good-ecdsa: clean
 # reset: hello2 runs
 test-overwrite: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-upgrade-only.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-upgrade-only.conf \
 		all
 
 # Test that when configured for RSA, a wrong signature in the upgrade
@@ -222,10 +226,10 @@ test-overwrite: clean
 # reset: hello1 runs
 test-bad-rsa-upgrade: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-rsa.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-rsa.conf \
 		boot hello1
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-rsa.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-rsa.conf \
 		SIGNING_KEY=../../root-ec-p256.pem \
 		hello2
 
@@ -237,11 +241,11 @@ test-bad-rsa-upgrade: clean
 # reset: hello1 runs
 test-bad-ecdsa-upgrade: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-ecdsa-p256.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-ecdsa-p256.conf \
 		SIGNING_KEY=../../root-ec-p256.pem \
 		boot hello1
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-ecdsa-p256.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-ecdsa-p256.conf \
 		SIGNING_KEY=../../root-rsa-2048.pem \
 		hello2
 
@@ -253,7 +257,7 @@ test-bad-ecdsa-upgrade: clean
 # reset: hello1 runs
 test-no-bootcheck: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-skip-primary-slot-validate.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-skip-primary-slot-validate.conf \
 		SIGNING_KEY=../../root-ec-p256.pem \
 		all
 
@@ -264,10 +268,10 @@ test-no-bootcheck: clean
 # reset: hello1 runs
 test-wrong-rsa: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-rsa.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-rsa.conf \
 		boot hello1
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-rsa.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-rsa.conf \
 		SIGNING_KEY=bad-keys/bad-rsa-2048.pem \
 		hello2
 
@@ -278,11 +282,11 @@ test-wrong-rsa: clean
 # reset: hello1 runs
 test-wrong-ecdsa: clean
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-ecdsa-p256.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-ecdsa-p256.conf \
 		SIGNING_KEY=../../root-ec-p256.pem \
 		boot hello1
 	$(MAKE) \
-		BOOTLOADER_OVERLAY_CONFIG=$(PWD)/overlay-ecdsa-p256.conf \
+		BOOTLOADER_EXTRA_CONF_FILE=$(PWD)/overlay-ecdsa-p256.conf \
 		SIGNING_KEY=bad-keys/bad-ec-p256.pem \
 		hello2
 

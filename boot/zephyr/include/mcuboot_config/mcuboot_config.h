@@ -2,6 +2,7 @@
  * Copyright (c) 2018 Open Source Foundries Limited
  * Copyright (c) 2019-2020 Arm Limited
  * Copyright (c) 2019-2020 Linaro Limited
+ * Copyright (c) 2023 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -87,10 +88,18 @@
 #define IMAGE_EXECUTABLE_RAM_SIZE CONFIG_BOOT_IMAGE_EXECUTABLE_RAM_SIZE
 #endif
 
+#ifdef CONFIG_BOOT_FIRMWARE_LOADER
+#define MCUBOOT_FIRMWARE_LOADER
+#endif
+
 #ifdef CONFIG_UPDATEABLE_IMAGE_NUMBER
 #define MCUBOOT_IMAGE_NUMBER    CONFIG_UPDATEABLE_IMAGE_NUMBER
 #else
 #define MCUBOOT_IMAGE_NUMBER    1
+#endif
+
+#ifdef CONFIG_BOOT_VERSION_CMP_USE_BUILD_NUMBER
+#define MCUBOOT_VERSION_CMP_USE_BUILD_NUMBER
 #endif
 
 #ifdef CONFIG_BOOT_SWAP_SAVE_ENCTLV
@@ -113,11 +122,6 @@
 #define MCUBOOT_ENCRYPT_EC256
 #endif
 
-#ifdef CONFIG_BOOT_SERIAL_ENCRYPT_EC256
-#define MCUBOOT_ENC_IMAGES
-#define MCUBOOT_ENCRYPT_EC256
-#endif
-
 #ifdef CONFIG_BOOT_ENCRYPT_X25519
 #define MCUBOOT_ENC_IMAGES
 #define MCUBOOT_ENCRYPT_X25519
@@ -133,6 +137,14 @@
 
 #ifdef CONFIG_MCUBOOT_DOWNGRADE_PREVENTION
 #define MCUBOOT_DOWNGRADE_PREVENTION 1
+/* MCUBOOT_DOWNGRADE_PREVENTION_SECURITY_COUNTER is used later as bool value so it is
+ * always defined, (unlike MCUBOOT_DOWNGRADE_PREVENTION which is only used in
+ * preprocessor condition and my be not defined) */
+#  ifdef CONFIG_MCUBOOT_DOWNGRADE_PREVENTION_SECURITY_COUNTER
+#    define MCUBOOT_DOWNGRADE_PREVENTION_SECURITY_COUNTER 1
+#  else
+#    define MCUBOOT_DOWNGRADE_PREVENTION_SECURITY_COUNTER 0
+#  endif
 #endif
 
 #ifdef CONFIG_MCUBOOT_HW_DOWNGRADE_PREVENTION
@@ -145,6 +157,18 @@
 
 #ifdef CONFIG_BOOT_SHARE_DATA
 #define MCUBOOT_DATA_SHARING
+#endif
+
+#ifdef CONFIG_BOOT_SHARE_BACKEND_RETENTION
+#define MCUBOOT_CUSTOM_DATA_SHARING_FUNCTION
+#endif
+
+#ifdef CONFIG_BOOT_SHARE_DATA_BOOTINFO
+#define MCUBOOT_DATA_SHARING_BOOTINFO
+#endif
+
+#ifdef CONFIG_MEASURED_BOOT_MAX_CBOR_SIZE
+#define MAX_BOOT_RECORD_SZ CONFIG_MEASURED_BOOT_MAX_CBOR_SIZE
 #endif
 
 #ifdef CONFIG_BOOT_FIH_PROFILE_OFF
@@ -185,6 +209,10 @@
 #define MCUBOOT_VERIFY_IMG_ADDRESS
 #endif
 
+#ifdef CONFIG_MCUBOOT_SERIAL
+#define MCUBOOT_SERIAL
+#endif
+
 /*
  * The configuration option enables direct image upload with the
  * serial recovery.
@@ -195,6 +223,23 @@
 
 #ifdef CONFIG_BOOT_SERIAL_WAIT_FOR_DFU
 #define MCUBOOT_SERIAL_WAIT_FOR_DFU
+#endif
+
+#ifdef CONFIG_BOOT_SERIAL_IMG_GRP_HASH
+#define MCUBOOT_SERIAL_IMG_GRP_HASH
+#endif
+
+#ifdef CONFIG_BOOT_SERIAL_IMG_GRP_IMAGE_STATE
+#define MCUBOOT_SERIAL_IMG_GRP_IMAGE_STATE
+#endif
+
+#ifdef CONFIG_MCUBOOT_SERIAL
+#define MCUBOOT_SERIAL_RECOVERY
+#endif
+
+#if (defined(CONFIG_BOOT_USB_DFU_WAIT) || \
+     defined(CONFIG_BOOT_USB_DFU_GPIO))
+#define MCUBOOT_USB_DFU
 #endif
 
 /*
@@ -233,12 +278,33 @@
 #define MCUBOOT_MAX_IMG_SECTORS       128
 #endif
 
+#ifdef CONFIG_BOOT_SERIAL_MAX_RECEIVE_SIZE
+#define MCUBOOT_SERIAL_MAX_RECEIVE_SIZE CONFIG_BOOT_SERIAL_MAX_RECEIVE_SIZE
+#endif
+
+#ifdef CONFIG_BOOT_SERIAL_UNALIGNED_BUFFER_SIZE
+#define MCUBOOT_SERIAL_UNALIGNED_BUFFER_SIZE CONFIG_BOOT_SERIAL_UNALIGNED_BUFFER_SIZE
+#endif
+
+#if defined(MCUBOOT_DATA_SHARING) && defined(ZEPHYR_VER_INCLUDE)
+#include <app_version.h>
+
+#define MCUBOOT_VERSION_AVAILABLE
+#define MCUBOOT_VERSION_MAJOR APP_VERSION_MAJOR
+#define MCUBOOT_VERSION_MINOR APP_VERSION_MINOR
+#define MCUBOOT_VERSION_PATCHLEVEL APP_PATCHLEVEL
+#endif
+
 /* Support 32-byte aligned flash sizes */
 #if DT_HAS_CHOSEN(zephyr_flash)
     #if DT_PROP_OR(DT_CHOSEN(zephyr_flash), write_block_size, 0) > 8
         #define MCUBOOT_BOOT_MAX_ALIGN \
             DT_PROP(DT_CHOSEN(zephyr_flash), write_block_size)
     #endif
+#endif
+
+#ifdef CONFIG_MCUBOOT_BOOTUTIL_LIB_FOR_DIRECT_XIP
+#define MCUBOOT_BOOTUTIL_LIB_FOR_DIRECT_XIP 1
 #endif
 
 #if CONFIG_BOOT_WATCHDOG_FEED
@@ -263,26 +329,34 @@
 #elif defined(CONFIG_NRFX_WDT0)
 #define MCUBOOT_WATCHDOG_FEED() \
     FEED_WDT_INST(0);
-#else /* defined(CONFIG_NRFX_WDT0) && defined(CONFIG_NRFX_WDT1) */
-#error "No NRFX WDT instances enabled"
-#endif /* defined(CONFIG_NRFX_WDT0) && defined(CONFIG_NRFX_WDT1) */
-
-#elif CONFIG_IWDG_STM32 /* CONFIG_NRFX_WDT */
-#include <zephyr/device.h>
-#include <zephyr/drivers/watchdog.h>
-
+#elif defined(CONFIG_NRFX_WDT30) && defined(CONFIG_NRFX_WDT31)
 #define MCUBOOT_WATCHDOG_FEED() \
     do {                        \
-        const struct device* wdt =                                  \
-            DEVICE_DT_GET_OR_NULL(DT_INST(0, st_stm32_watchdog));   \
-        if (device_is_ready(wdt)) {                                 \
-            wdt_feed(wdt, 0);                                       \
-        }                                                           \
+        FEED_WDT_INST(30);      \
+        FEED_WDT_INST(31);      \
     } while (0)
+#elif defined(CONFIG_NRFX_WDT30)
+#define MCUBOOT_WATCHDOG_FEED() \
+    FEED_WDT_INST(30);
+#elif defined(CONFIG_NRFX_WDT31)
+#define MCUBOOT_WATCHDOG_FEED() \
+    FEED_WDT_INST(31);
+#else
+#error "No NRFX WDT instances enabled"
+#endif
 
-#elif DT_NODE_HAS_STATUS(DT_ALIAS(watchdog0), okay) /* CONFIG_IWDG_STM32 */
+#elif DT_NODE_HAS_STATUS(DT_ALIAS(watchdog0), okay) /* CONFIG_NRFX_WDT */
 #include <zephyr/device.h>
 #include <zephyr/drivers/watchdog.h>
+
+#define MCUBOOT_WATCHDOG_SETUP()                              \
+    do {                                                      \
+        const struct device* wdt =                            \
+            DEVICE_DT_GET(DT_ALIAS(watchdog0));               \
+        if (device_is_ready(wdt)) {                           \
+            wdt_setup(wdt, 0);                                \
+        }                                                     \
+    } while (0)
 
 #define MCUBOOT_WATCHDOG_FEED()                               \
     do {                                                      \
@@ -305,6 +379,10 @@
     } while (0)
 
 #endif /* CONFIG_BOOT_WATCHDOG_FEED */
+
+#ifndef MCUBOOT_WATCHDOG_SETUP
+#define MCUBOOT_WATCHDOG_SETUP()
+#endif
 
 #define MCUBOOT_CPU_IDLE() \
   if (!IS_ENABLED(CONFIG_MULTITHREADING)) { \

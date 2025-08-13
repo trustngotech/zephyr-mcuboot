@@ -34,6 +34,18 @@ shallow_clone_mynewt() {
     mkdir -p repos/apache-mynewt-core
     git clone --depth=1 https://github.com/apache/mynewt-core repos/apache-mynewt-core
     [[ $? -ne 0 ]] && exit 1
+
+    # nrfx is now taken from original repository
+    git clone --depth=1 --branch v3.3.0 https://github.com/NordicSemiconductor/nrfx.git repos/nordic-nrfx
+    [[ $? -ne 0 ]] && exit 1
+
+    # Mbed-TLS is now taken from original repository
+    git clone --depth=1 --branch v2.28.4 https://github.com/Mbed-TLS/mbedtls.git repos/mbedtls
+    [[ $? -ne 0 ]] && exit 1
+
+    # CMSIS is now taken from original repository
+    git clone --depth=1 --branch 5.4.0 https://github.com/ARM-software/CMSIS_5.git repos/arm-CMSIS_5
+    [[ $? -ne 0 ]] && exit 1
 }
 
 arm_toolchain_install() {
@@ -57,9 +69,15 @@ arm_toolchain_install() {
     done
 }
 
+native_test_setup() {
+    sudo apt-get update
+    sudo apt-get install -y gcc-multilib
+}
+
 mkdir -p $HOME/bin
 export PATH=$HOME/bin:$PATH
 
 install_newt
 shallow_clone_mynewt
 arm_toolchain_install
+native_test_setup
